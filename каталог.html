@@ -128,13 +128,15 @@
     border-radius:12px;box-shadow:var(--shadow-lg);padding:10px;pointer-events:none;
     opacity:0;transform:translateY(4px);transition:opacity .12s,transform .12s;font-size:12.5px;
   }
-  #hovercard.show{opacity:1;transform:translateY(0)}
+  #hovercard.show{opacity:1;transform:translateY(0);pointer-events:auto}
   #hovercard .pic{background:#fff;border-radius:8px;height:150px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:8px}
   #hovercard .pic img{max-width:100%;max-height:100%;object-fit:contain}
-  #hovercard .pic .st{color:#9aa4b6;font-size:12px;text-align:center;padding:0 8px}
+  #hovercard .pic .st{color:#9aa4b6;font-size:12px;text-align:center;padding:0 8px;line-height:1.4}
   #hovercard h4{margin:0 0 4px;font-size:13.5px;color:var(--text)}
   #hovercard p{margin:0;color:var(--muted);line-height:1.45}
-  #hovercard .src{margin-top:7px;font-size:10.5px;color:#9aa4b6;display:none}
+  #hovercard .acts{display:flex;gap:6px;margin-top:9px}
+  #hovercard .acts button{flex:1;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:7px;padding:6px 4px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit}
+  #hovercard .acts button:hover{border-color:var(--accent);color:var(--accent)}
 </style>
 </head>
 <body>
@@ -217,7 +219,10 @@
   <div class="pic"></div>
   <h4></h4>
   <p></p>
-  <div class="src">📷 ваше фото</div>
+  <div class="acts">
+    <button id="hcYandex" type="button">🔍 Яндекс</button>
+    <button id="hcSet" type="button">📌 URL</button>
+  </div>
 </div>
 
 <script>
@@ -671,56 +676,124 @@ function lookupTool(text){
   for(const [k,info] of TOOLINFO){ if(t.includes(k)) return info; }
   return null;
 }
+// англоязычные запросы к Викискладу — так находятся изолированные фото на белом фоне
+const EN = {
+  "Пробойник":"revolving leather hole punch","Разводной ключ":"adjustable wrench","Гаечный ключ":"spanner wrench",
+  "Шестигранный ключ":"hex key allen","Бокорезы":"diagonal cutting pliers","Плоскогубцы":"pliers",
+  "Пассатижи":"combination pliers","Клещи (инструмент)":"pincers tool","Отвёртка":"screwdriver",
+  "Молоток":"claw hammer","Строительный нож":"utility knife","Лазерный уровень":"laser level tool",
+  "Нивелир":"laser level","Уровень (инструмент)":"spirit level tool","Шпатель":"putty knife",
+  "Изоляционная лента":"electrical insulating tape","Термоусаживаемая трубка":"heat shrink tubing",
+  "Клеммная колодка":"terminal block connector","Дюбель":"wall plug dowel","Саморез":"self tapping screw",
+  "Подрозетник":"electrical back box","Электрическая розетка":"electrical power socket",
+  "Устройство защитного отключения":"residual current device","Выключатель":"light switch",
+  "Электрический кабель":"electrical cable","Электрический провод":"electrical wire","Блок питания":"AC power adapter",
+  "Сифон (сантехника)":"sink drain trap","Трос":"steel wire rope","Шланг":"water hose",
+  "Кран-букса":"faucet valve cartridge","Аэратор (сантехника)":"faucet aerator","Замок (запирающее устройство)":"mortise door lock",
+  "Кронштейн":"shelf bracket","Крепёжный уголок":"angle bracket","Мебельный навес":"cabinet hanging bracket",
+  "Карниз для штор":"curtain rail track","Профиль (строительство)":"aluminium profile","Отбивочный шнур":"chalk line reel",
+  "Крюк":"metal hook","Заглушка":"plastic end cap","Стретч-плёнка":"stretch wrap film","Инсектицид":"cockroach bait trap",
+  "Наждачная бумага":"sandpaper","Подставка для ноутбука":"laptop stand","Торцевая головка":"socket wrench"
+};
+
+// Пользовательские картинки (закреплённые URL) — хранятся отдельно
+let customImg = {};
+try{ customImg = JSON.parse(localStorage.getItem("toolImg_v1")||"{}"); }catch(e){ customImg = {}; }
+function saveCustomImg(){ try{ localStorage.setItem("toolImg_v1", JSON.stringify(customImg)); }catch(e){} }
+
+// Поиск картинки на Викискладе по текстовому запросу (CORS разрешён)
+const imgCache = {};
+function fetchCommons(term){
+  if(term in imgCache) return Promise.resolve(imgCache[term]);
+  const url = "https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*"
+    + "&generator=search&gsrnamespace=6&gsrlimit=8&gsrsearch=" + encodeURIComponent(term)
+    + "&prop=imageinfo&iiprop=url&iiurlwidth=320";
+  return fetch(url).then(r=>r.ok?r.json():null).then(j=>{
+    let src=null;
+    try{
+      const pages = Object.values(j.query.pages).sort((a,b)=>a.index-b.index);
+      const cand = pages
+        .filter(p=>p.imageinfo && p.imageinfo[0] && p.imageinfo[0].thumburl)
+        .map((p,i)=>({t:(p.title||"").toLowerCase(), u:p.imageinfo[0].thumburl, i}))
+        .filter(c=>!/\.(svg|gif|tif|tiff|pdf|webm|ogv)$/.test(c.t)); // отсекаем схемы/вектор/видео
+      const words = term.toLowerCase().split(/\s+/).filter(w=>w.length>3);
+      const score = c=>{
+        let s=0; words.forEach(w=>{ if(c.t.includes(w)) s++; }); // совпадение слов запроса в имени файла
+        if(/\.png$/.test(c.t)) s+=0.5;                            // png — чаще без фона
+        return s - c.i*0.01;                                       // при равенстве — по порядку выдачи
+      };
+      cand.sort((a,b)=>score(b)-score(a));
+      src = cand[0] ? cand[0].u : null;
+    }catch(e){}
+    imgCache[term]=src; return src;
+  }).catch(()=>{ imgCache[term]=null; return null; });
+}
 
 const hc = document.getElementById("hovercard");
-const hcPic = hc.querySelector(".pic"), hcH4 = hc.querySelector("h4"), hcP = hc.querySelector("p"), hcSrc = hc.querySelector(".src");
-let hcEl = null;
+const hcPic = hc.querySelector(".pic"), hcH4 = hc.querySelector("h4"), hcP = hc.querySelector("p");
+let hcEl = null, hcInfo = null, hideTimer = null;
 function positionHC(el){
   const r = el.getBoundingClientRect();
-  const w = 236, h = hc.offsetHeight || 240;
-  let left = r.left;
-  let top = r.bottom + 8;
+  const w = 236, h = hc.offsetHeight || 260;
+  let left = r.left; let top = r.bottom + 8;
   if(left + w > innerWidth - 8) left = innerWidth - 8 - w;
   if(left < 8) left = 8;
   if(top + h > innerHeight - 8) top = r.top - h - 8;
   if(top < 8) top = 8;
   hc.style.left = left + "px"; hc.style.top = top + "px";
 }
-document.addEventListener("mouseover", e=>{
-  const el = e.target.closest(".tref"); if(!el || el===hcEl) return;
-  hcEl = el;
-  const name = el.textContent.trim();
-  // Владелец названия: карточка (её фото) или пункт описи (фото исходной карточки) — берём ВАШЕ фото
-  let id = null;
-  const card = el.closest(".card"), li = el.closest("li[data-item]");
-  if(card) id = card.dataset.id; else if(li) id = li.dataset.item;
-  const it = id ? items.find(x=>x.id===id) : null;
-  const img = it ? resolveImg(it) : "";
-  const info = lookupTool(name);
-  hcH4.textContent = name;
-  hcP.textContent = info ? info.d : (it && it.desc ? (it.desc.length>110 ? it.desc.slice(0,110)+"…" : it.desc) : "");
+function setHcImg(src){
   hcPic.innerHTML = "";
-  if(img){
-    const im = new Image();
-    im.onerror = ()=>{ if(hcEl===el) hcPic.innerHTML = `<span class="st">нет фото</span>`; };
-    im.onload  = ()=>{ if(hcEl===el) positionHC(el); };
-    im.src = img;
-    hcPic.appendChild(im);
-    hcSrc.textContent = "📷 ваше фото" + (it ? " · " + it.title : "");
-    hcSrc.style.display = "block";
-  } else {
-    hcPic.innerHTML = `<span class="st">нет фото</span>`;
-    hcSrc.style.display = "none";
-  }
+  const im = new Image();
+  im.onerror = ()=>{ hcPic.innerHTML = `<span class="st">картинка не загрузилась —<br>нажмите 🔍 Яндекс</span>`; };
+  im.onload  = ()=>{ if(hcEl) positionHC(hcEl); };
+  im.src = src; hcPic.appendChild(im);
+}
+function showHover(el){
+  const name = el.textContent.trim();
+  const info = lookupTool(name);
+  hcInfo = { q: info?info.q:name, en: info?(EN[info.q]||info.q):name, d: info?info.d:"" };
+  hcH4.textContent = hcInfo.q;
+  hcP.textContent = hcInfo.d;
   positionHC(el);
   hc.classList.add("show");
-}, true);
+  const custom = customImg[hcInfo.q];
+  if(custom){ setHcImg(custom); return; }
+  hcPic.innerHTML = `<span class="st">ищу картинку…</span>`;
+  fetchCommons(hcInfo.en).then(src=>{
+    if(hcEl!==el) return;
+    if(src) setHcImg(src);
+    else hcPic.innerHTML = `<span class="st">не нашлось —<br>нажмите 🔍 Яндекс</span>`;
+  });
+}
+const clearHide = ()=>clearTimeout(hideTimer);
+const startHide = ()=>{ clearTimeout(hideTimer); hideTimer=setTimeout(()=>{ hc.classList.remove("show"); hcEl=null; }, 280); };
+document.addEventListener("mouseover", e=>{
+  const el = e.target.closest(".tref");
+  if(el){ clearHide(); if(el!==hcEl){ hcEl=el; showHover(el); } return; }
+  if(e.target.closest("#hovercard")) clearHide();
+});
 document.addEventListener("mouseout", e=>{
-  const el = e.target.closest(".tref"); if(!el) return;
-  if(e.relatedTarget && el.contains(e.relatedTarget)) return;   // всё ещё внутри того же названия
-  hc.classList.remove("show"); hcEl = null;
-}, true);
+  const from = e.target.closest(".tref") || e.target.closest("#hovercard");
+  if(!from) return;
+  const to = e.relatedTarget;
+  if(to && to.closest && (to.closest(".tref")===hcEl || to.closest("#hovercard"))) return;
+  startHide();
+});
 window.addEventListener("scroll", ()=>{ hc.classList.remove("show"); hcEl=null; }, true);
+
+document.getElementById("hcYandex").onclick = ()=>{
+  if(!hcInfo) return;
+  window.open("https://yandex.ru/images/search?text=" + encodeURIComponent(hcInfo.q + " без фона на белом"), "_blank");
+};
+document.getElementById("hcSet").onclick = ()=>{
+  if(!hcInfo) return;
+  const url = prompt("Вставьте URL картинки для «"+hcInfo.q+"».\nВ Яндекс.Картинках: ПКМ по фото → «Копировать адрес изображения».\nПустое поле — сбросить.", customImg[hcInfo.q]||"");
+  if(url===null) return;
+  if(url.trim()){ customImg[hcInfo.q]=url.trim(); setHcImg(url.trim()); }
+  else { delete customImg[hcInfo.q]; hcPic.innerHTML=`<span class="st">ищу картинку…</span>`; fetchCommons(hcInfo.en).then(s=>{ if(s) setHcImg(s); }); }
+  saveCustomImg();
+};
 
 render();
 </script>
