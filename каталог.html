@@ -58,6 +58,7 @@
   .thumb .zoom{position:absolute;right:8px;bottom:8px;background:rgba(0,0,0,.55);color:#fff;border-radius:8px;padding:3px 8px;font-size:12px;opacity:0;transition:.15s}
   .thumb:hover .zoom{opacity:1}
   .body{padding:14px;display:flex;flex-direction:column;gap:9px;flex:1}
+  .gtag{align-self:flex-start;display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--muted);background:var(--bg);border:1px solid var(--border);border-radius:999px;padding:3px 9px}
   .card h3{margin:0;font-size:16px;line-height:1.25}
   .badges{display:flex;gap:6px;flex-wrap:wrap}
   .badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:999px;color:#fff}
@@ -183,6 +184,10 @@
       <label>Место хранения</label>
       <input type="text" id="fLoc" placeholder="Напр.: Кладовка, жёлтый ящик">
     </div>
+    <div class="field">
+      <label>Контейнер / группа <span class="lh">— карточки с одинаковой группой встают рядом</span></label>
+      <input type="text" id="fGroup" placeholder="Напр.: Жёлтый ящик с инструментами">
+    </div>
     <div class="sheet-actions">
       <button class="btn ghost" id="cancelBtn">Отмена</button>
       <button class="btn" id="saveBtn">Сохранить</button>
@@ -203,7 +208,7 @@ const SEED_IMAGES = {"i1": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/4
 const SEED = [
   { id:"i1", imgId:"i1", title:"Ящик с ручным инструментом",
     desc:"Открытый ящик: револьверный пробойник Deli (дырокол для кожи/картона), два разводных ключа, кусачки/клещи, шестигранный (имбусовый) ключ, проходной выключатель, термоусадка Rexant (зелёная/синяя/чёрная), красная изолента, дюбели, саморезы и мебельные заглушки.",
-    cats:["Инструменты","Электрика","Крепёж"], loc:"",
+    cats:["Инструменты","Электрика","Крепёж"], loc:"", group:"Жёлтый ящик с инструментами",
     contents:[
       {n:"Револьверный пробойник Deli (дырокол)",c:["Инструменты"]},
       {n:"Разводной ключ (2 шт)",c:["Инструменты"]},
@@ -217,7 +222,7 @@ const SEED = [
     ]},
   { id:"i2", imgId:"i2", title:"Ящик с сантехникой и хозтоварами",
     desc:"Глубокий отсек: наливной шланг (для стиральной/посудомоечной машины), стальной трос (сантехнический/крепёжный), жёлтый пластиковый и металлический шпатели, тяжёлый металлический вороток/рычаг, ловушки от тараканов «Тайга».",
-    cats:["Сантехника","Инструменты","Хозтовары"], loc:"",
+    cats:["Сантехника","Инструменты","Хозтовары"], loc:"", group:"Жёлтый ящик с инструментами",
     contents:[
       {n:"Наливной шланг (стиральная/посудомоечная машина)",c:["Сантехника"]},
       {n:"Стальной трос (сантехнический/крепёжный)",c:["Сантехника"]},
@@ -324,7 +329,7 @@ const SEED = [
     ]},
   { id:"i21", imgId:"i21", title:"Ящик с инструментами (жёлтый лоток)",
     desc:"Верхний лоток жёлтого ящика: набор отвёрток (крупная с бирюзово-чёрной ручкой, оранжевые крестовая и плоская, зелёная малая), два рожковых/гаечных ключа, зелёная изолента, синяя клеммная колодка, оранжевые дюбели, латунный сантехнический фитинг (кран-букса/аэратор), шестигранная головка, наждачная бумага, белые пластиковые заглушки (3 шт), чёрная пластиковая рамка-накладка и крючок-тяга с пружиной.",
-    cats:["Инструменты","Электрика","Сантехника","Крепёж"], loc:"",
+    cats:["Инструменты","Электрика","Сантехника","Крепёж"], loc:"", group:"Жёлтый ящик с инструментами",
     contents:[
       {n:"Отвёртка крупная (бирюзово-чёрная ручка)",c:["Инструменты"]},
       {n:"Отвёртки оранжевые (крестовая и плоская)",c:["Инструменты"]},
@@ -359,7 +364,11 @@ function load(){
   if(!data) data = JSON.parse(JSON.stringify(SEED));
   // Дозаполняем «содержимое» для старых сохранённых позиций из SEED (правки мест хранения сохраняются)
   const seedById = {}; SEED.forEach(s=>seedById[s.id]=s);
-  data.forEach(it=>{ if(!it.contents && seedById[it.id]) it.contents = JSON.parse(JSON.stringify(seedById[it.id].contents)); });
+  data.forEach(it=>{
+    const s = seedById[it.id];
+    if(!it.contents && s) it.contents = JSON.parse(JSON.stringify(s.contents));
+    if(s && s.group && !it.group) it.group = s.group;
+  });
   // Подмешиваем новые позиции из каталога, которых ещё нет в сохранённых данных
   const have = new Set(data.map(x=>x.id));
   SEED.forEach(s=>{ if(!have.has(s.id)) data.push(JSON.parse(JSON.stringify(s))); });
@@ -396,7 +405,9 @@ function render(){
   if(!list.length){
     grid.innerHTML = `<div class="empty">Ничего не найдено 🤷</div>`;
   } else {
-    grid.innerHTML = list.map(it=>{
+    // Карточки одной группы (одного физического ящика) ставим рядом
+    const ordered = clusterByGroup(list);
+    grid.innerHTML = ordered.map(it=>{
       const src = resolveImg(it);
       const thumb = src
         ? `<img src="${src}" alt="${esc(it.title)}" loading="lazy"><span class="zoom">🔍 во весь экран</span>`
@@ -405,6 +416,7 @@ function render(){
       <div class="card" data-id="${it.id}">
         <div class="thumb" data-id="${it.id}">${thumb}</div>
         <div class="body">
+          ${it.group?`<span class="gtag">📦 ${esc(it.group)}</span>`:""}
           <h3>${esc(it.title)}</h3>
           <div class="badges">${it.cats.map(c=>`<span class="badge" style="background:${CATS[c]||'#64748b'}">${c}</span>`).join("")}</div>
           <p class="desc">${esc(it.desc)}</p>
@@ -436,6 +448,20 @@ function render(){
 
   renderSummary(list);
   updateStats();
+}
+
+// Собирает карточки одной группы вместе: группа встаёт на место своего первого элемента,
+// остальные карточки сохраняют исходный порядок.
+function clusterByGroup(list){
+  const done = new Set(), out = [];
+  list.forEach(it=>{
+    if(it.group){
+      if(done.has(it.group)) return;
+      done.add(it.group);
+      list.forEach(x=>{ if(x.group===it.group) out.push(x); });
+    } else out.push(it);
+  });
+  return out;
 }
 
 function renderSummary(list){
@@ -497,6 +523,7 @@ function openModal(id){
   document.getElementById("fTitle").value = it?it.title:"";
   document.getElementById("fDesc").value  = it?it.desc:"";
   document.getElementById("fLoc").value   = it?it.loc:"";
+  document.getElementById("fGroup").value = (it&&it.group)?it.group:"";
   document.getElementById("fContents").value = (it&&it.contents) ? it.contents.map(x=>x.n).join("\n") : "";
   buildCatPick(it?it.cats:[]);
   const src = it?resolveImg(it):"";
@@ -529,14 +556,15 @@ document.getElementById("saveBtn").onclick = ()=>{
   const finalCats = cats.length?cats:["Прочее"];
   const desc = document.getElementById("fDesc").value.trim();
   const loc  = document.getElementById("fLoc").value.trim();
+  const group = document.getElementById("fGroup").value.trim();
   const clines = document.getElementById("fContents").value.split("\n").map(s=>s.trim()).filter(Boolean);
   const contents = clines.map(n=>({n, c:[finalCats[0]]}));
   if(editingId){
     const it = items.find(x=>x.id===editingId);
-    it.title=title; it.desc=desc; it.loc=loc; it.cats=finalCats; it.contents=contents;
+    it.title=title; it.desc=desc; it.loc=loc; it.group=group; it.cats=finalCats; it.contents=contents;
     if(pendingPhoto) it.img=pendingPhoto;
   } else {
-    items.unshift({ id:"u"+Date.now(), img:pendingPhoto||"", title, desc, loc, cats:finalCats, contents });
+    items.unshift({ id:"u"+Date.now(), img:pendingPhoto||"", title, desc, loc, group, cats:finalCats, contents });
   }
   save(); closeModal(); render();
 };
