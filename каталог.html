@@ -217,7 +217,7 @@
   <div class="pic"></div>
   <h4></h4>
   <p></p>
-  <div class="src">🖼 изображение: Википедия</div>
+  <div class="src">📷 ваше фото</div>
 </div>
 
 <script>
@@ -494,7 +494,7 @@ function renderSummary(list){
   const groups = {};
   list.forEach(it=>(it.contents||[]).forEach(ce=>{
     const cs = (ce.c && ce.c.length) ? ce.c : ["Прочее"];
-    cs.forEach(cat=>{ (groups[cat]=groups[cat]||[]).push({name:ce.n, from:it.title}); });
+    cs.forEach(cat=>{ (groups[cat]=groups[cat]||[]).push({name:ce.n, from:it.title, id:it.id}); });
   }));
   let cats = Object.keys(CATS).filter(c=>groups[c] && groups[c].length);
   if(!cats.length){ box.className="summary hide"; box.innerHTML=""; return; }
@@ -515,7 +515,7 @@ function renderSummary(list){
     const act = (c===activeCat) ? " act" : "";
     return `<div class="grp">
       <div class="ghead${act}"><span class="dot" style="background:${CATS[c]}"></span>${esc(c)} <span class="cnt">— ${rows.length}</span></div>
-      <ul>${rows.map(r=>`<li><span class="tref">${esc(r.name)}</span> <span class="from">· ${esc(r.from)}</span></li>`).join("")}</ul>
+      <ul>${rows.map(r=>`<li data-item="${esc(r.id)}"><span class="tref">${esc(r.name)}</span> <span class="from">· ${esc(r.from)}</span></li>`).join("")}</ul>
     </div>`;
   }).join("");
 }
@@ -666,18 +666,10 @@ const TOOLINFO = [
   ["подставк",    {q:"Подставка для ноутбука",          d:"Держатель под ноутбук или планшет."}],
   ["головк",      {q:"Торцевая головка",                d:"Сменная насадка-стакан для гаек и болтов."}]
 ];
-const wikiCache = {};
 function lookupTool(text){
   const t = (text||"").toLowerCase();
   for(const [k,info] of TOOLINFO){ if(t.includes(k)) return info; }
   return null;
-}
-function fetchWikiImg(q){
-  if(q in wikiCache) return Promise.resolve(wikiCache[q]);
-  return fetch("https://ru.wikipedia.org/api/rest_v1/page/summary/"+encodeURIComponent(q))
-    .then(r=>r.ok?r.json():null)
-    .then(j=>{ const src=(j&&((j.thumbnail&&j.thumbnail.source)||(j.originalimage&&j.originalimage.source)))||null; wikiCache[q]=src; return src; })
-    .catch(()=>{ wikiCache[q]=null; return null; });
 }
 
 const hc = document.getElementById("hovercard");
@@ -696,27 +688,32 @@ function positionHC(el){
 }
 document.addEventListener("mouseover", e=>{
   const el = e.target.closest(".tref"); if(!el || el===hcEl) return;
-  const info = lookupTool(el.textContent);
-  if(!info){ hc.classList.remove("show"); hcEl=null; return; }
   hcEl = el;
-  hcH4.textContent = info.q;
-  hcP.textContent = info.d;
-  hcSrc.style.display = "none";
-  hcPic.innerHTML = `<span class="st">загрузка изображения…</span>`;
+  const name = el.textContent.trim();
+  // Владелец названия: карточка (её фото) или пункт описи (фото исходной карточки) — берём ВАШЕ фото
+  let id = null;
+  const card = el.closest(".card"), li = el.closest("li[data-item]");
+  if(card) id = card.dataset.id; else if(li) id = li.dataset.item;
+  const it = id ? items.find(x=>x.id===id) : null;
+  const img = it ? resolveImg(it) : "";
+  const info = lookupTool(name);
+  hcH4.textContent = name;
+  hcP.textContent = info ? info.d : (it && it.desc ? (it.desc.length>110 ? it.desc.slice(0,110)+"…" : it.desc) : "");
+  hcPic.innerHTML = "";
+  if(img){
+    const im = new Image();
+    im.onerror = ()=>{ if(hcEl===el) hcPic.innerHTML = `<span class="st">нет фото</span>`; };
+    im.onload  = ()=>{ if(hcEl===el) positionHC(el); };
+    im.src = img;
+    hcPic.appendChild(im);
+    hcSrc.textContent = "📷 ваше фото" + (it ? " · " + it.title : "");
+    hcSrc.style.display = "block";
+  } else {
+    hcPic.innerHTML = `<span class="st">нет фото</span>`;
+    hcSrc.style.display = "none";
+  }
   positionHC(el);
   hc.classList.add("show");
-  const q = info.q;
-  fetchWikiImg(q).then(src=>{
-    if(hcEl!==el) return;              // курсор уже ушёл
-    if(src){
-      const im = new Image();
-      im.onload = ()=>{ if(hcEl===el){ hcPic.innerHTML=""; hcPic.appendChild(im); hcSrc.style.display="block"; positionHC(el); } };
-      im.onerror = ()=>{ if(hcEl===el) hcPic.innerHTML = `<span class="st">🔧 изображение недоступно</span>`; };
-      im.src = src;
-    } else {
-      hcPic.innerHTML = `<span class="st">🔧 изображение недоступно</span>`;
-    }
-  });
 }, true);
 document.addEventListener("mouseout", e=>{
   const el = e.target.closest(".tref"); if(!el) return;
