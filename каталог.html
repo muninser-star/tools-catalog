@@ -117,6 +117,24 @@
   .sheet-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
   .hint{font-size:12px;color:var(--muted);margin:14px 20px 0;max-width:1200px}
   .hint b{color:var(--text)}
+
+  /* Подсказка при наведении на название инструмента */
+  .tref{border-bottom:1px dashed var(--accent);cursor:help}
+  .summary .tref{border-bottom-color:var(--border)}
+  .card h3 .tref{border-bottom-color:transparent}
+  .card:hover h3 .tref{border-bottom-color:var(--border)}
+  #hovercard{
+    position:fixed;z-index:200;width:236px;background:var(--card);border:1px solid var(--border);
+    border-radius:12px;box-shadow:var(--shadow-lg);padding:10px;pointer-events:none;
+    opacity:0;transform:translateY(4px);transition:opacity .12s,transform .12s;font-size:12.5px;
+  }
+  #hovercard.show{opacity:1;transform:translateY(0)}
+  #hovercard .pic{background:#fff;border-radius:8px;height:150px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:8px}
+  #hovercard .pic img{max-width:100%;max-height:100%;object-fit:contain}
+  #hovercard .pic .st{color:#9aa4b6;font-size:12px;text-align:center;padding:0 8px}
+  #hovercard h4{margin:0 0 4px;font-size:13.5px;color:var(--text)}
+  #hovercard p{margin:0;color:var(--muted);line-height:1.45}
+  #hovercard .src{margin-top:7px;font-size:10.5px;color:#9aa4b6;display:none}
 </style>
 </head>
 <body>
@@ -193,6 +211,13 @@
       <button class="btn" id="saveBtn">Сохранить</button>
     </div>
   </div>
+</div>
+
+<div id="hovercard">
+  <div class="pic"></div>
+  <h4></h4>
+  <p></p>
+  <div class="src">🖼 изображение: Википедия</div>
 </div>
 
 <script>
@@ -417,7 +442,7 @@ function render(){
         <div class="thumb" data-id="${it.id}">${thumb}</div>
         <div class="body">
           ${it.group?`<span class="gtag">📦 ${esc(it.group)}</span>`:""}
-          <h3>${esc(it.title)}</h3>
+          <h3><span class="tref">${esc(it.title)}</span></h3>
           <div class="badges">${it.cats.map(c=>`<span class="badge" style="background:${CATS[c]||'#64748b'}">${c}</span>`).join("")}</div>
           <p class="desc">${esc(it.desc)}</p>
           <div class="loc">
@@ -490,7 +515,7 @@ function renderSummary(list){
     const act = (c===activeCat) ? " act" : "";
     return `<div class="grp">
       <div class="ghead${act}"><span class="dot" style="background:${CATS[c]}"></span>${esc(c)} <span class="cnt">— ${rows.length}</span></div>
-      <ul>${rows.map(r=>`<li>${esc(r.name)} <span class="from">· ${esc(r.from)}</span></li>`).join("")}</ul>
+      <ul>${rows.map(r=>`<li><span class="tref">${esc(r.name)}</span> <span class="from">· ${esc(r.from)}</span></li>`).join("")}</ul>
     </div>`;
   }).join("");
 }
@@ -583,6 +608,122 @@ document.getElementById("importFile").onchange = e=>{
 };
 
 document.getElementById("search").oninput = e=>{ query=e.target.value; render(); };
+
+/* ---------- Подсказки при наведении на название инструмента ---------- */
+// [ключ-подстрока (в нижнем регистре), { q: статья Википедии для картинки, d: короткое описание }]
+// порядок важен: более конкретные — выше
+const TOOLINFO = [
+  ["пробойник",   {q:"Пробойник",                       d:"Ручной инструмент для пробивания отверстий в коже, картоне, ремнях."}],
+  ["разводн",     {q:"Разводной ключ",                  d:"Гаечный ключ с подвижной губкой — под гайки и болты разного размера."}],
+  ["рожков",      {q:"Гаечный ключ",                    d:"Ключ с открытым зевом для гаек и болтов под конкретный размер."}],
+  ["гаечн",       {q:"Гаечный ключ",                    d:"Инструмент для закручивания и откручивания гаек и болтов."}],
+  ["имбус",       {q:"Шестигранный ключ",               d:"Г-образный ключ для винтов с внутренним шестигранником."}],
+  ["шестигран",   {q:"Шестигранный ключ",               d:"Ключ-имбус под винты с шестигранным гнездом."}],
+  ["кусачк",      {q:"Бокорезы",                        d:"Кусачки для перекусывания проволоки, гвоздей, кабеля."}],
+  ["плоскогуб",   {q:"Плоскогубцы",                     d:"Губцы для захвата, удержания деталей и гибки проволоки."}],
+  ["пассатиж",    {q:"Пассатижи",                       d:"Комбинированные плоскогубцы с режущими кромками."}],
+  ["клещ",        {q:"Клещи (инструмент)",              d:"Рычажные губки для захвата, зажима и перекусывания."}],
+  ["отвёрт",      {q:"Отвёртка",                        d:"Инструмент для винтов и шурупов (крестовые и шлицевые)."}],
+  ["отверт",      {q:"Отвёртка",                        d:"Инструмент для винтов и шурупов (крестовые и шлицевые)."}],
+  ["молот",       {q:"Молоток",                         d:"Ударный инструмент для забивания гвоздей и правки."}],
+  ["нож",         {q:"Строительный нож",                d:"Нож с выдвижным сегментным лезвием для реза материалов."}],
+  ["лазерн",      {q:"Лазерный уровень",                d:"Проецирует лазерную линию/точку для разметки строго по уровню."}],
+  ["нивелир",     {q:"Нивелир",                         d:"Прибор для выравнивания по горизонту и вертикали."}],
+  ["уровень",     {q:"Уровень (инструмент)",            d:"Пузырьковый прибор для проверки горизонтали и вертикали."}],
+  ["шпател",      {q:"Шпатель",                         d:"Плоская лопатка для нанесения и разравнивания шпаклёвки/клея."}],
+  ["изолент",     {q:"Изоляционная лента",              d:"Самоклеящаяся лента для изоляции электрических соединений."}],
+  ["термоусад",   {q:"Термоусаживаемая трубка",         d:"Трубка, дающая усадку при нагреве — изоляция проводов."}],
+  ["клеммн",      {q:"Клеммная колодка",                d:"Соединитель проводов через винтовые или зажимные контакты."}],
+  ["колодк",      {q:"Клеммная колодка",                d:"Соединитель проводов через винтовые или зажимные контакты."}],
+  ["дюбел",       {q:"Дюбель",                          d:"Распорный вставыш в стену под шуруп или саморез."}],
+  ["саморез",     {q:"Саморез",                         d:"Винт с острой резьбой, врезающейся в материал без гайки."}],
+  ["подрозетник", {q:"Подрозетник",                     d:"Монтажная коробка для розетки/выключателя в стене."}],
+  ["розетк",      {q:"Электрическая розетка",           d:"Точка подключения электроприборов к сети."}],
+  ["узо",         {q:"Устройство защитного отключения", d:"Отключает сеть при утечке тока — защита от удара."}],
+  ["выключател",  {q:"Выключатель",                     d:"Коммутирует электрическую цепь: включает и выключает."}],
+  ["кабел",       {q:"Электрический кабель",            d:"Один или несколько проводников в общей изоляции."}],
+  ["провод",      {q:"Электрический провод",            d:"Металлический проводник тока в изоляции."}],
+  ["блок питания",{q:"Блок питания",                    d:"Преобразует сетевое напряжение в нужное устройству."}],
+  ["сифон",       {q:"Сифон (сантехника)",              d:"Изогнутый узел под раковиной — гидрозатвор от запаха."}],
+  ["трос",        {q:"Трос",                            d:"Гибкий стальной канат; сантехнический — для прочистки труб."}],
+  ["шланг",       {q:"Шланг",                           d:"Гибкая трубка для подачи воды, напр. к стиральной машине."}],
+  ["кран-букса",  {q:"Кран-букса",                      d:"Запорный узел смесителя, регулирует поток воды."}],
+  ["аэратор",     {q:"Аэратор (сантехника)",            d:"Насадка на смеситель: смешивает струю воды с воздухом."}],
+  ["замок",       {q:"Замок (запирающее устройство)",   d:"Механизм запирания двери."}],
+  ["кронштейн",   {q:"Кронштейн",                       d:"Опора для крепления полок и техники к стене."}],
+  ["уголок",      {q:"Крепёжный уголок",                d:"Г-образная перфопластина для соединения деталей под 90°."}],
+  ["навесн",      {q:"Мебельный навес",                 d:"Регулируемое крепление шкафа к настенной планке."}],
+  ["карниз",      {q:"Карниз для штор",                 d:"Штанга или шина для подвешивания штор."}],
+  ["профиль",     {q:"Профиль (строительство)",         d:"Длинномерный элемент постоянного сечения из металла/пластика."}],
+  ["разметочн",   {q:"Отбивочный шнур",                 d:"Шнур с краской для отбивки прямых линий на поверхности."}],
+  ["крюк",        {q:"Крюк",                            d:"Изогнутый элемент для подвешивания предметов."}],
+  ["крюч",        {q:"Крюк",                            d:"Изогнутый элемент-зацеп для подвешивания."}],
+  ["заглушк",     {q:"Заглушка",                        d:"Колпачок, закрывающий отверстие, резьбу или торец."}],
+  ["стретч",      {q:"Стретч-плёнка",                   d:"Растягивающаяся плёнка для упаковки и фиксации грузов."}],
+  ["ловушк",      {q:"Инсектицид",                      d:"Приманка-ловушка от насекомых (тараканов)."}],
+  ["таракан",     {q:"Инсектицид",                      d:"Приманка-ловушка от тараканов."}],
+  ["наждач",      {q:"Наждачная бумага",                d:"Абразивная бумага для шлифовки и зачистки поверхностей."}],
+  ["подставк",    {q:"Подставка для ноутбука",          d:"Держатель под ноутбук или планшет."}],
+  ["головк",      {q:"Торцевая головка",                d:"Сменная насадка-стакан для гаек и болтов."}]
+];
+const wikiCache = {};
+function lookupTool(text){
+  const t = (text||"").toLowerCase();
+  for(const [k,info] of TOOLINFO){ if(t.includes(k)) return info; }
+  return null;
+}
+function fetchWikiImg(q){
+  if(q in wikiCache) return Promise.resolve(wikiCache[q]);
+  return fetch("https://ru.wikipedia.org/api/rest_v1/page/summary/"+encodeURIComponent(q))
+    .then(r=>r.ok?r.json():null)
+    .then(j=>{ const src=(j&&((j.thumbnail&&j.thumbnail.source)||(j.originalimage&&j.originalimage.source)))||null; wikiCache[q]=src; return src; })
+    .catch(()=>{ wikiCache[q]=null; return null; });
+}
+
+const hc = document.getElementById("hovercard");
+const hcPic = hc.querySelector(".pic"), hcH4 = hc.querySelector("h4"), hcP = hc.querySelector("p"), hcSrc = hc.querySelector(".src");
+let hcEl = null;
+function positionHC(el){
+  const r = el.getBoundingClientRect();
+  const w = 236, h = hc.offsetHeight || 240;
+  let left = r.left;
+  let top = r.bottom + 8;
+  if(left + w > innerWidth - 8) left = innerWidth - 8 - w;
+  if(left < 8) left = 8;
+  if(top + h > innerHeight - 8) top = r.top - h - 8;
+  if(top < 8) top = 8;
+  hc.style.left = left + "px"; hc.style.top = top + "px";
+}
+document.addEventListener("mouseover", e=>{
+  const el = e.target.closest(".tref"); if(!el || el===hcEl) return;
+  const info = lookupTool(el.textContent);
+  if(!info){ hc.classList.remove("show"); hcEl=null; return; }
+  hcEl = el;
+  hcH4.textContent = info.q;
+  hcP.textContent = info.d;
+  hcSrc.style.display = "none";
+  hcPic.innerHTML = `<span class="st">загрузка изображения…</span>`;
+  positionHC(el);
+  hc.classList.add("show");
+  const q = info.q;
+  fetchWikiImg(q).then(src=>{
+    if(hcEl!==el) return;              // курсор уже ушёл
+    if(src){
+      const im = new Image();
+      im.onload = ()=>{ if(hcEl===el){ hcPic.innerHTML=""; hcPic.appendChild(im); hcSrc.style.display="block"; positionHC(el); } };
+      im.onerror = ()=>{ if(hcEl===el) hcPic.innerHTML = `<span class="st">🔧 изображение недоступно</span>`; };
+      im.src = src;
+    } else {
+      hcPic.innerHTML = `<span class="st">🔧 изображение недоступно</span>`;
+    }
+  });
+}, true);
+document.addEventListener("mouseout", e=>{
+  const el = e.target.closest(".tref"); if(!el) return;
+  if(e.relatedTarget && el.contains(e.relatedTarget)) return;   // всё ещё внутри того же названия
+  hc.classList.remove("show"); hcEl = null;
+}, true);
+window.addEventListener("scroll", ()=>{ hc.classList.remove("show"); hcEl=null; }, true);
 
 render();
 </script>
